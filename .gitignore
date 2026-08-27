@@ -1,34 +1,18 @@
-# Backend
-backend/.env
-backend/venv/
-backend/__pycache__/
-backend/**/__pycache__/
-backend/*.sqlite3
-backend/staticfiles/
-backend/media/
+# backend/, camera_node/ and frontend/ each have their own .gitignore
+# for app-specific ignores (venv, __pycache__, .env, node_modules,
+# etc.) -- this file only covers things that don't belong to one app.
 
-# Camera node
-camera_node/.env
-camera_node/.env.cam*
-camera_node/venv/
-camera_node/__pycache__/
-camera_node/test_data/
-evaluation_report.json
-
-# Frontend
-frontend/node_modules/
-frontend/build/
-frontend/dist/
-
-# Models (weights are large binaries, don't commit)
-models/*.pt
+# Top-level models/ (shared/reference weights, not camera_node's own
+# models/, which has its own .gitignore)
 models/*.onnx
 models/*.pth
-camera_node/models/*.pt
-camera_node/models/*.onnx
-camera_node/models/*.pth
 
-# Python (in case a __pycache__/*.pyc shows up outside backend/camera_node)
+# In case evaluate.py is ever run from the repo root instead of
+# camera_node/ -- camera_node/.gitignore only catches it in there.
+evaluation_report.json
+
+# Generic safety net for anywhere not already covered by a nested
+# .gitignore (e.g. pytest run from the repo root).
 *.pyc
 .pytest_cache/
 
@@ -37,3 +21,5 @@ camera_node/models/*.pth
 *.log
 .vscode/
 .idea/
+
+debug_view.py
