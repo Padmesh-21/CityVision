@@ -1,0 +1,29 @@
+# Backend
+backend/.env
+backend/venv/
+backend/__pycache__/
+backend/**/__pycache__/
+backend/*.sqlite3
+backend/staticfiles/
+backend/media/
+
+# Camera node
+camera_node/.env
+camera_node/venv/
+camera_node/__pycache__/
+
+# Frontend
+frontend/node_modules/
+frontend/build/
+frontend/dist/
+
+# Models (weights are large binaries, don't commit)
+models/*.pt
+models/*.onnx
+models/*.pth
+
+# OS / editor
+.DS_Store
+*.log
+.vscode/
+.idea/
