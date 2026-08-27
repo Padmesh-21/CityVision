@@ -8,8 +8,10 @@ urlpatterns = [
     path("api/", include("users.urls")),
     path("api/cameras/", include("cameras.urls")),
     path("api/vehicles/", include("vehicles.urls")),
+    path("api/vehicles/", include("trajectory.urls")),
     path("api/detections/", include("detections.urls")),
     path("api/", include("alerts.urls")),
+    path("api/analytics/", include("analytics.urls")),
 ]
 
 if settings.DEBUG:

@@ -122,9 +122,14 @@ def _compare(ground_truth: str, predicted: str) -> tuple[float, float, float, li
     return char_accuracy, precision, recall, confusions
 
 
+_IMAGE_EXTENSIONS = ("*.jpg", "*.jpeg", "*.png")
+
+
 def evaluate(data_dir: Path, ocr_model: OCRModel) -> list[SampleResult]:
     results = []
-    image_paths = sorted(data_dir.glob("*.jpg")) + sorted(data_dir.glob("*.png"))
+    image_paths = sorted(
+        path for pattern in _IMAGE_EXTENSIONS for path in data_dir.glob(pattern)
+    )
 
     for path in image_paths:
         ground_truth = path.stem.split("_")[0].upper()

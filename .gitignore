@@ -9,8 +9,11 @@ backend/media/
 
 # Camera node
 camera_node/.env
+camera_node/.env.cam*
 camera_node/venv/
 camera_node/__pycache__/
+camera_node/test_data/
+evaluation_report.json
 
 # Frontend
 frontend/node_modules/
@@ -21,6 +24,13 @@ frontend/dist/
 models/*.pt
 models/*.onnx
 models/*.pth
+camera_node/models/*.pt
+camera_node/models/*.onnx
+camera_node/models/*.pth
+
+# Python (in case a __pycache__/*.pyc shows up outside backend/camera_node)
+*.pyc
+.pytest_cache/
 
 # OS / editor
 .DS_Store

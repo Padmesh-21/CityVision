@@ -29,8 +29,19 @@ Being built incrementally. See the step-by-step plan below.
       plate format-correction, and an accuracy evaluation harness
       (`evaluate.py`) -- explicitly flags synthetic vs. real results so
       no accuracy number is trusted without real Indian plate photos.
-- [ ] Step 5 -- Trajectory reconstruction + analytics
-- [ ] Step 6 -- React GIS dashboard
+- [x] **Step 5 -- Trajectory reconstruction + analytics**: `GET
+      /api/vehicles/<plate>/trajectory/`, plus `/api/analytics/`
+      summary, route-density, average-speed and heatmap endpoints --
+      all derived live from `Detection` rows, no new tables. Verified
+      against real multi-camera test data; caught and fixed a MySQL
+      timezone-table gap that was silently zeroing out hourly stats.
+- [x] **Step 6 -- React GIS dashboard**: Vite + React, JWT auth with
+      silent token refresh, Leaflet map (camera markers, trajectory
+      polylines, alert markers, heatmap layer), Recharts analytics,
+      Dashboard/Vehicle Search/Analytics/Alerts/Cameras pages. Verified
+      live in a real (headless) browser against the real backend --
+      every page, zero console errors, real cross-camera trajectory
+      rendered on the map.
 - [ ] Step 7 -- Real-time alerts (Django Channels)
 - [ ] Step 8 -- Optimization & scalability (Celery, Redis, RTSP)
 
