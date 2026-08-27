@@ -15,24 +15,37 @@ Webcam -> Frame Sampling -> Vehicle Detection -> Plate Detection
 |---|---|
 | `config.py` | Loads all settings from `.env` -- server URL, camera identity/location, thresholds |
 | `camera.py` | Opens the webcam via OpenCV, yields frames sampled at a fixed interval |
-| `detector.py` | `VehicleDetector` interface + `YoloVehicleDetector` (pretrained YOLOv8, default) + `MotionVehicleDetector` (Step 2 zero-dependency fallback) |
-| `plate_detector.py` | `PlateDetector` interface + `LocalPlateDetector` (classic blackhat/Sobel-gradient localization, no trained model) |
-| `preprocessing.py` | Real OpenCV preprocessing: resize, grayscale, denoise, CLAHE contrast, adaptive threshold, deskew |
-| `ocr.py` | `OCRModel` interface + `EasyOCRModel` (pretrained, default) + `MockOCRModel` (Step 2 zero-dependency fallback) |
+| `detector.py` | `VehicleDetector` interface + `YoloVehicleDetector` (pretrained YOLOv8) |
+| `plate_detector.py` | `PlateDetector` interface + `YoloPlateDetector` (YOLOv8 fine-tuned for plates) |
+| `preprocessing.py` | OpenCV preprocessing: resize, grayscale, CLAHE contrast |
+| `ocr.py` | `OCRModel` interface + `EasyOCRModel` (pretrained) |
 | `plate_format.py` | Indian plate format validation + OCR-confusion correction (e.g. `O`<->`0`) using the known `SSDDLLNNNN` layout |
 | `tracker.py` | Frame-to-frame centroid tracking, so OCR runs once per vehicle track, not once per frame |
 | `deduplication.py` | Suppresses re-sending the same plate within a configurable time window |
 | `api_client.py` | POSTs detection events to Django, authenticated with the camera's API key |
 | `main.py` | Wires all of the above into the capture loop |
 | `evaluate.py` | OCR accuracy evaluation harness (character accuracy, exact-match, precision/recall, confusions) |
+| `debug_view.py` | Live OpenCV window showing every detection stage (see "Debugging" below) |
 
 ## Models (Step 4)
 
 | Stage | Model | Pretrained or trained? |
 |---|---|---|
 | Vehicle detection | YOLOv8n (COCO), filtered to car/motorcycle/bus/truck | Pretrained, used as-is -- "is this a vehicle" transfers directly from COCO, no fine-tuning needed |
-| Plate localization | Classic blackhat + Sobel-gradient + morphological-close (`LocalPlateDetector`) | Not a trained model at all -- a geometry/contrast-based classical CV technique, so there's no dataset dependency |
+| Plate localization | YOLOv8n fine-tuned specifically on license plate images (`YoloPlateDetector`) | Pretrained by a third party specifically for this task (COCO has no "license plate" class at all, so the vehicle model's own weights can't do this) |
 | OCR | EasyOCR (pretrained English scene-text recognizer) | Pretrained, **not** fine-tuned for license plates |
+
+**Getting the plate-detection model:** unlike `yolov8n.pt` (a stock
+ultralytics weight that auto-downloads by name), this is a third-party
+fine-tuned checkpoint and has to be fetched once per machine:
+
+```powershell
+curl.exe -L -o models/license_plate_yolov8n.pt https://huggingface.co/Koushim/yolov8-license-plate-detection/resolve/main/best.pt
+```
+
+(Verified: single class `license_plate`, correctly detects a real plate
+at 0.88 confidence, tight/accurate box -- see "Verified" below. 42k+
+downloads on Hugging Face as of writing.)
 
 **Known limitation, stated plainly:** EasyOCR is a general scene-text
 engine. It was not trained on Indian plates specifically, which have two
@@ -40,7 +53,25 @@ failure modes it doesn't know about: two-line motorcycle plates, and
 non-standard/stylized fonts that are common in practice despite the
 official HSRP standard. `plate_format.py` corrects common single-character
 OCR confusions using the known plate layout, which helps regardless of
-engine, but it can't fix a fundamentally misread plate.
+engine, but it can't fix a fundamentally misread plate. It also trims
+stray leading characters when OCR reads more than the expected 10 --
+real Indian plates commonly have an "IND" hologram/state emblem to the
+left of the plate number, which EasyOCR sometimes merges into the same
+text run as one detected region; since the plate number is always the
+trailing part of that run, trimming to the last 10 characters recovers
+it without guessing at a segmentation.
+
+**Preprocessing, tested not assumed:** `preprocessing.py` used to also
+hard-threshold the crop to pure black/white and deskew it, on the
+assumption that a "clean" binary image helps OCR. Tested against a real
+plate photo with known ground truth, comparing exact variants through
+the real EasyOCR model, that assumption was backwards for this engine --
+binarization made readings worse, sometimes catastrophically (a
+perfectly legible crop reading as a single stray character). EasyOCR's
+model was trained on natural scene text and does its own internal
+preprocessing; a resized, contrast-enhanced (CLAHE) *grayscale* image
+outperformed a hand-thresholded binary mask in every configuration
+tried. See "Verified" below for the numbers.
 
 **The plan, not just an assumption:** don't trust an accuracy number for
 this pipeline that wasn't measured on real photos. Run `evaluate.py`
@@ -85,6 +116,29 @@ pip install -r requirements.txt
 copy .env.example .env
 ```
 
+`easyocr` unconditionally depends on `opencv-python-headless`, which
+gets installed alongside the `opencv-python` this project actually needs
+and silently breaks any GUI window (`cv2.imshow`, used by
+`debug_view.py`) with `The function is not implemented. Rebuild the
+library with Windows, GTK+ 2.x or Cocoa support`. Fix it once per venv,
+right after the install above:
+
+```powershell
+pip uninstall -y opencv-python-headless
+pip install --force-reinstall --no-deps opencv-python==4.10.0.84
+```
+
+(`main.py` and `evaluate.py` never call `cv2.imshow`, so they work either
+way -- this only bites you if you run `debug_view.py`.)
+
+Also download the plate-detection model (see "Models" below for
+details/verification -- `yolov8n.pt`, the vehicle model, auto-downloads
+on first run, but this one doesn't):
+
+```powershell
+curl.exe -L -o models/license_plate_yolov8n.pt https://huggingface.co/Koushim/yolov8-license-plate-detection/resolve/main/best.pt
+```
+
 Edit `.env`:
 - `SERVER_URL` -- where the Django backend from Step 1 is running.
 - `CAMERA_ID` / `API_KEY` -- must match a `Camera` already created via
@@ -123,13 +177,30 @@ you'll instead see `-- ALERT GENERATED`.
 
 Stop with `Ctrl+C`.
 
-To go back to the dependency-free Step 2 pipeline (motion detection +
-mock OCR, useful for testing the dedup/tracking/API-client logic without
-installing torch/ultralytics/easyocr), swap the imports in `main.py`
-back to `MotionVehicleDetector`, `CenterCropPlateDetector`* and
-`MockOCRModel` -- they're still in `detector.py`/`ocr.py` unchanged.
-(*`CenterCropPlateDetector` was folded into `LocalPlateDetector`'s
-fallback path; use `LocalPlateDetector` either way.)
+## Debugging: "is it even detecting the plate?"
+
+`main.py` is deliberately silent when nothing happens: it only runs
+plate detection *inside* a box YOLO already classified as a vehicle
+(car/motorcycle/bus/truck). If you point the webcam at, say, a phone
+held up showing a plate photo, YOLO won't classify a hand holding a
+phone as a vehicle, so `vehicle_boxes` stays empty and plate
+detection/OCR never runs -- with no log line telling you why.
+
+Run `python debug_view.py` instead to see every stage live in a window:
+
+- **yellow box** -- anything YOLO recognizes at all, any COCO class
+  (so you can tell "YOLO sees nothing" apart from "YOLO sees something,
+  just not a vehicle")
+- **green box** -- specifically a vehicle class
+- **blue box** -- a plate found by `YoloPlateDetector`, run directly on
+  the *full frame* (not gated behind a vehicle box), so you can test
+  plate localization and OCR in isolation from vehicle detection
+- a second window shows the preprocessed plate crop and prints the raw
+  vs. format-corrected OCR text to the console
+
+Press `q` in the video window to quit. If you're testing with a plate
+photo on your phone, hold it close enough and steady enough that the
+plate fills a reasonable fraction of the frame and stays in focus.
 
 ## Verified
 
@@ -142,17 +213,12 @@ correct per-camera attribution.
 **Step 4 (real models):**
 - `YoloVehicleDetector` on a real photo (bus, 0.87 confidence, correct
   COCO class filtering) and on the live webcam feed (correctly detects
-  **zero** vehicles in an empty room -- no false positives, unlike the
-  Step 2 motion detector).
-- `LocalPlateDetector` on a synthetic plate-in-frame image: located the
-  text region almost exactly on the actual plate coordinates (validated
-  after fixing a bug where an extra "light-background" mask was
-  fragmenting the detected region instead of helping).
+  **zero** vehicles in an empty room -- no false positives).
 - `EasyOCRModel`: real pretrained detection + recognition models
   downloaded and loaded; scored 100% exact-match on `evaluate.py`'s
   synthetic dataset (expected -- clean rendered text is easy; this is
   **not** a real-world accuracy claim, see "Measuring real accuracy").
-- Full chain (YOLO -> LocalPlateDetector -> preprocessing -> EasyOCR ->
+- Full chain (YOLO vehicle -> YOLO plate -> preprocessing -> EasyOCR ->
   `plate_format.correct_plate`) run on a real photo without errors, and
   the empty-OCR-result case (no legible plate in frame) handled cleanly
   rather than crashing or hallucinating text.
@@ -160,6 +226,20 @@ correct per-camera attribution.
   generated as synthetic would be mis-reported as non-synthetic on a
   later run -- now tracked via an explicit `.synthetic` marker file
   rather than "is the directory non-empty."
+
+**Plate detector swap + preprocessing rework** (measured on the one real
+Indian plate photo in `test_data/plates/`, ground truth `MH20DV2366`):
+
+| Change | Character accuracy | Notes |
+|---|---|---|
+| Original (`LocalPlateDetector` + hard-threshold preprocessing) | 60% | `evaluate.py`'s original recorded number |
+| New (`YoloPlateDetector` + CLAHE-only preprocessing + IND-badge trim) | 90% | Only remaining error: `M` misread as `H`/`N`, likely residual "IND" badge pixels bleeding into the first character |
+| Same change, measured via `evaluate.py`'s harness (runs on the raw uncropped photo, not a tight crop -- a harder test) | 80% | Confirms the preprocessing change helps even without the plate-detector crop |
+
+Also confirmed: `YoloPlateDetector` on this photo returns a tight,
+visually correct box (0.88 confidence) around just the plate -- a human
+eye can read the crop cleanly. `LocalPlateDetector`'s classical CV
+approach found a looser, less precise box on the same photo.
 
 ## Running multiple nodes (Step 3)
 

@@ -15,7 +15,6 @@ actual Indian plates.
 Usage:
     python evaluate.py                        # auto: real data if present, else synthetic
     python evaluate.py --data-dir path/to/plates
-    python evaluate.py --ocr mock             # use MockOCRModel instead of EasyOCR
 
 Expected data format: one image per file, named "<GROUND_TRUTH_PLATE>...jpg"
 e.g. TN09AB1234.jpg, TN09AB1234_angle2.jpg, KA05MH4321_blur.jpg
@@ -32,7 +31,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from ocr import EasyOCRModel, MockOCRModel, OCRModel
+from ocr import EasyOCRModel, OCRModel
 from plate_format import correct_plate
 from preprocessing import preprocess_plate
 
@@ -184,7 +183,6 @@ def main() -> None:
 
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--data-dir", type=Path, default=DEFAULT_DATA_DIR)
-    parser.add_argument("--ocr", choices=["easyocr", "mock"], default="easyocr")
     parser.add_argument("--report", type=Path, default=Path("evaluation_report.json"))
     args = parser.parse_args()
 
@@ -207,7 +205,7 @@ def main() -> None:
             args.data_dir,
         )
 
-    ocr_model: OCRModel = MockOCRModel() if args.ocr == "mock" else EasyOCRModel()
+    ocr_model: OCRModel = EasyOCRModel()
 
     results = evaluate(args.data_dir, ocr_model)
     summary = summarize(results)

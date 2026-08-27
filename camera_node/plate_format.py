@@ -38,7 +38,19 @@ def correct_plate(raw: str) -> str:
     from uppercasing/stripping non-alphanumerics) if it isn't the
     correctable length."""
     candidate = re.sub(r"[^A-Z0-9]", "", raw.upper())
-    if len(candidate) != len(_CORRECTABLE_LAYOUT):
+    layout_len = len(_CORRECTABLE_LAYOUT)
+
+    if len(candidate) > layout_len:
+        # Real Indian plates commonly have an "IND" hologram/state emblem
+        # to the left of the plate number itself. OCR sometimes merges
+        # that into the same text run (one detected region, not two), so
+        # a too-long reading usually means stray characters *before* the
+        # actual plate number, not after it -- the plate number is the
+        # trailing run. Trimming to the last `layout_len` characters
+        # recovers it without guessing at a segmentation.
+        candidate = candidate[-layout_len:]
+
+    if len(candidate) != layout_len:
         return candidate
 
     corrected_chars = []

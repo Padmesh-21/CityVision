@@ -41,6 +41,11 @@ class CameraConfig:
     FRAME_SAMPLE_INTERVAL_SECONDS: float = config(
         "FRAME_SAMPLE_INTERVAL_SECONDS", default=0.5, cast=float
     )
+    # Most webcams default to 640x480 if not told otherwise, which is too
+    # little detail for plate localization/OCR at any realistic distance.
+    # The driver clamps to the nearest mode it actually supports.
+    CAMERA_WIDTH: int = config("CAMERA_WIDTH", default=1280, cast=int)
+    CAMERA_HEIGHT: int = config("CAMERA_HEIGHT", default=720, cast=int)
 
     # -- Detection / tracking --
     # Used by detector.YoloVehicleDetector, the default since Step 4.
@@ -48,9 +53,15 @@ class CameraConfig:
     VEHICLE_CONFIDENCE_THRESHOLD: float = config(
         "VEHICLE_CONFIDENCE_THRESHOLD", default=0.4, cast=float
     )
-    # Only used if detector.MotionVehicleDetector (the Step 2 zero-dependency
-    # fallback) is swapped in instead.
-    MIN_VEHICLE_AREA: int = config("MIN_VEHICLE_AREA", default=6000, cast=int)
+    # Used by plate_detector.YoloPlateDetector, the default since this
+    # model file isn't a stock ultralytics weight -- see
+    # camera_node/README.md for where to download it.
+    PLATE_MODEL_PATH: str = config(
+        "PLATE_MODEL_PATH", default="models/license_plate_yolov8n.pt"
+    )
+    PLATE_CONFIDENCE_THRESHOLD: float = config(
+        "PLATE_CONFIDENCE_THRESHOLD", default=0.4, cast=float
+    )
     TRACK_MAX_AGE_SECONDS: float = config("TRACK_MAX_AGE_SECONDS", default=2.0, cast=float)
 
     # -- Deduplication --

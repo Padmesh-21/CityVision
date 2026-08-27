@@ -17,8 +17,8 @@ from config import CameraConfig
 from deduplication import PlateDeduplicator
 from detector import YoloVehicleDetector
 from ocr import EasyOCRModel
-from plate_detector import LocalPlateDetector
-from plate_format import correct_plate
+from plate_detector import YoloPlateDetector
+from plate_format import correct_plate, is_valid_format
 from preprocessing import preprocess_plate
 from tracker import CentroidTracker
 
@@ -34,11 +34,15 @@ def run() -> None:
     # interleaved in one console or collected into one log file.
     logger = logging.getLogger(f"camera_node.{cfg.CAMERA_ID}")
 
-    webcam = WebcamSource(cfg.CAMERA_INDEX, cfg.FRAME_SAMPLE_INTERVAL_SECONDS)
+    webcam = WebcamSource(
+        cfg.CAMERA_INDEX, cfg.FRAME_SAMPLE_INTERVAL_SECONDS, cfg.CAMERA_WIDTH, cfg.CAMERA_HEIGHT
+    )
     vehicle_detector = YoloVehicleDetector(
         model_path=cfg.VEHICLE_MODEL_PATH, confidence_threshold=cfg.VEHICLE_CONFIDENCE_THRESHOLD
     )
-    plate_detector = LocalPlateDetector()
+    plate_detector = YoloPlateDetector(
+        model_path=cfg.PLATE_MODEL_PATH, confidence_threshold=cfg.PLATE_CONFIDENCE_THRESHOLD
+    )
     ocr_model = EasyOCRModel()
     tracker = CentroidTracker(max_age=cfg.TRACK_MAX_AGE_SECONDS)
     dedup = PlateDeduplicator(window_seconds=cfg.DEDUP_WINDOW_SECONDS)
@@ -70,7 +74,13 @@ def run() -> None:
                 preprocessed = preprocess_plate(plate_crop)
                 raw_plate_number, confidence = ocr_model.read_plate(preprocessed)
                 plate_number = correct_plate(raw_plate_number)
-                tracker.mark_ocr_done(track_id)
+                is_final, plate_number, confidence = tracker.record_ocr_attempt(
+                    track_id, plate_number, confidence, is_valid_format(plate_number)
+                )
+                if not is_final:
+                    # Keep sampling more frames for this track before
+                    # committing to a reading.
+                    continue
 
                 if not plate_number:
                     continue

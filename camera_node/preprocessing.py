@@ -1,15 +1,29 @@
 """Plate crop preprocessing, applied before OCR regardless of which OCR
 engine is behind ocr.OCRModel.
 
-Plate Crop -> Resize -> Grayscale -> Noise Reduction -> Contrast
-Enhancement -> Adaptive Thresholding -> Deskew
+Plate Crop -> Resize -> Grayscale -> Contrast Enhancement (CLAHE)
+
+This used to also hard-threshold the image to pure black/white and
+deskew the result, on the assumption that a clean binary "OCR-ready"
+image would help. Empirically (tested against a real Indian plate photo
+with known ground truth, comparing exact preprocessing variants through
+the real EasyOCR model -- see camera_node/README.md) that assumption was
+wrong for this OCR engine: hard binarization consistently made readings
+*worse*, sometimes catastrophically (a correct-looking crop reading as a
+single stray character). EasyOCR's underlying model was trained on
+natural scene text and already does its own robust internal
+preprocessing -- handing it a clean, well-resized, contrast-enhanced
+*grayscale* image outperformed handing it a hand-thresholded binary mask
+in every configuration tested. Deskewing was implemented on top of that
+binary mask and removed along with it, since it has nothing to measure
+an angle from without one.
 """
 
 import cv2
 import numpy as np
 
 
-def preprocess_plate(plate_crop: np.ndarray, target_width: int = 300) -> np.ndarray:
+def preprocess_plate(plate_crop: np.ndarray, target_width: int = 600) -> np.ndarray:
     if plate_crop.size == 0:
         return plate_crop
 
@@ -20,30 +34,6 @@ def preprocess_plate(plate_crop: np.ndarray, target_width: int = 300) -> np.ndar
     )
 
     gray = cv2.cvtColor(resized, cv2.COLOR_BGR2GRAY) if resized.ndim == 3 else resized
-    denoised = cv2.fastNlMeansDenoising(gray, h=10)
 
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-    contrast = clahe.apply(denoised)
-
-    thresholded = cv2.adaptiveThreshold(
-        contrast, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 31, 15
-    )
-
-    return _deskew(thresholded)
-
-
-def _deskew(binary_img: np.ndarray) -> np.ndarray:
-    coords = np.column_stack(np.where(binary_img < 255))
-    if coords.shape[0] < 10:
-        return binary_img
-
-    angle = cv2.minAreaRect(coords)[-1]
-    angle = -(90 + angle) if angle < -45 else -angle
-    if abs(angle) < 0.5:
-        return binary_img
-
-    h, w = binary_img.shape[:2]
-    rotation_matrix = cv2.getRotationMatrix2D((w // 2, h // 2), angle, 1.0)
-    return cv2.warpAffine(
-        binary_img, rotation_matrix, (w, h), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE
-    )
+    return clahe.apply(gray)
