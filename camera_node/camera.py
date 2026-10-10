@@ -30,7 +30,6 @@ class WebcamSource:
 
     def open(self) -> None:
         # CAP_DSHOW avoids the multi-second startup delay MSMF sometimes
-        # has on Windows.
         self._cap = cv2.VideoCapture(self._camera_index, cv2.CAP_DSHOW)
         if not self._cap.isOpened():
             raise RuntimeError(f"Could not open webcam at index {self._camera_index}")
